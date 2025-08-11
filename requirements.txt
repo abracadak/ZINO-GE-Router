@@ -5,3 +5,5 @@ anthropic
 google-generativeai
 httpx
 python-dotenv
+slowapi
+structlog
