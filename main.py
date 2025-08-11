@@ -63,14 +63,14 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="지노이진호 창조명령권자 - ZINO-Genesis Engine",
-    version="4.3 Ascended",
+    version="4.4 Final",
     lifespan=lifespan,
 )
 
 # ================== Middlewares ==================
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=CORS_ALLOWED.split(",") if CORS_ALLOWED else ["*"], # 로컬 테스트를 위해 ["*"]로 변경
+    allow_origins=CORS_ALLOWED.split(",") if CORS_ALLOWED else ["*"],
     allow_credentials=True,
     allow_methods=["GET", "POST"],
     allow_headers=["Content-Type", "Authorization", "X-Internal-API-Key"],
@@ -129,11 +129,11 @@ async def post_with_retries(client: httpx.AsyncClient, url: str, **kwargs) -> ht
             sleep_s = BACKOFF_BASE * (2 ** attempt)
             await asyncio.sleep(sleep_s)
             log.warning("http_post_retry", url=url, attempt=attempt + 1, wait_sec=round(sleep_s, 2))
-
+            
 # ================== Health Check Endpoint ==================
 @app.get("/", tags=["Health Check"])
 def health_check():
-    return {"status": "ok", "message": "ZINO-GE v4.3 Ascended Protocol is alive!"}
+    return {"status": "ok", "message": "ZINO-GE v4.4 Final Protocol is alive!"}
 
 # ================== DMAC Core Agents ==================
 async def call_gemini(client: httpx.AsyncClient, prompt: str) -> str:
@@ -170,7 +170,7 @@ async def call_gpt_orchestrator(client: httpx.AsyncClient, original_prompt: str,
     return r.json()["choices"][0]["message"]["content"]
 
 # ================== Main Route ==================
-@app.post("/route", response_model=RouteOut, tags=["ZINO-GE Core v4.3 Ascended"])
+@app.post("/route", response_model=RouteOut, tags=["ZINO-GE Core v4.4 Final"])
 async def route(
     payload: RouteIn,
     request: Request,
@@ -180,7 +180,9 @@ async def route(
         raise HTTPException(status_code=401, detail="Unauthorized: Invalid internal API key")
     
     if ENABLE_RATELIMIT and _slowapi_installed:
-        await app.state.limiter.hit(RATELIMIT_RULE, request.scope)
+        # slowapi v0.1.9+ 에서는 limiter.check를 사용합니다.
+        limiter = request.app.state.limiter
+        await limiter.check(RATELIMIT_RULE, request)
 
     if not all([OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY]):
         raise HTTPException(status_code=500, detail="Server configuration error: API keys are missing.")
