@@ -63,7 +63,7 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(
     title="지노이진호 창조명령권자 - ZINO-Genesis Engine",
-    version="4.4 Final",
+    version="4.5 Final",
     lifespan=lifespan,
 )
 
@@ -77,13 +77,13 @@ app.add_middleware(
 )
 
 if ENABLE_RATELIMIT:
-    limiter = Limiter(key_func=get_remote_address)
+    limiter = Limiter(key_func=get_remote_address, default_limits=[RATELIMIT_RULE])
     app.state.limiter = limiter
     app.add_middleware(SlowAPIMiddleware)
 
 @app.exception_handler(RateLimitExceeded)
 async def _rate_limit_handler(request: Request, exc: RateLimitExceeded):
-    return JSONResponse(status_code=429, content={"detail": "Too Many Requests"})
+    return JSONResponse(status_code=429, content={"detail": f"Too Many Requests: {exc.detail}"})
 
 @app.middleware("http")
 async def add_request_id_and_log(request: Request, call_next):
@@ -91,14 +91,7 @@ async def add_request_id_and_log(request: Request, call_next):
     start_time = time.monotonic()
     response = await call_next(request)
     duration_ms = (time.monotonic() - start_time) * 1000
-    log.info(
-        "request_completed",
-        request_id=req_id,
-        method=request.method,
-        path=request.url.path,
-        status_code=response.status_code,
-        duration_ms=round(duration_ms, 2),
-    )
+    log.info( "request_completed", request_id=req_id, method=request.method, path=request.url.path, status_code=response.status_code, duration_ms=round(duration_ms, 2) )
     response.headers["X-Request-ID"] = req_id
     return response
 
@@ -113,7 +106,6 @@ class RouteOut(BaseModel):
 
 # ================== Utility: Retry Logic ==================
 RETRY_STATUS_CODES = {429, 502, 503, 504}
-
 async def post_with_retries(client: httpx.AsyncClient, url: str, **kwargs) -> httpx.Response:
     for attempt in range(MAX_RETRIES + 1):
         try:
@@ -129,11 +121,12 @@ async def post_with_retries(client: httpx.AsyncClient, url: str, **kwargs) -> ht
             sleep_s = BACKOFF_BASE * (2 ** attempt)
             await asyncio.sleep(sleep_s)
             log.warning("http_post_retry", url=url, attempt=attempt + 1, wait_sec=round(sleep_s, 2))
+    raise RuntimeError("This should not be reached")
 
 # ================== Health Check Endpoint ==================
 @app.get("/", tags=["Health Check"])
 def health_check():
-    return {"status": "ok", "message": "ZINO-GE v4.4 Final Protocol is alive!"}
+    return {"status": "ok", "message": "ZINO-GE v4.5 Final Protocol is alive!"}
 
 # ================== DMAC Core Agents ==================
 async def call_gemini(client: httpx.AsyncClient, prompt: str) -> str:
@@ -170,7 +163,8 @@ async def call_gpt_orchestrator(client: httpx.AsyncClient, original_prompt: str,
     return r.json()["choices"][0]["message"]["content"]
 
 # ================== Main Route ==================
-@app.post("/route", response_model=RouteOut, tags=["ZINO-GE Core v4.4 Final"])
+@app.post("/route", response_model=RouteOut, tags=["ZINO-GE Core v4.5 Final"])
+@limiter.limit(RATELIMIT_RULE)
 async def route(
     payload: RouteIn,
     request: Request,
@@ -179,10 +173,6 @@ async def route(
     if INTERNAL_API_KEY and x_internal_api_key != INTERNAL_API_KEY:
         raise HTTPException(status_code=401, detail="Unauthorized: Invalid internal API key")
     
-    if ENABLE_RATELIMIT and _slowapi_installed:
-        limiter = request.app.state.limiter
-        await limiter.check(request)
-
     if not all([OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY]):
         raise HTTPException(status_code=500, detail="Server configuration error: API keys are missing.")
 
