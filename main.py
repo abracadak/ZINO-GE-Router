@@ -129,7 +129,7 @@ async def post_with_retries(client: httpx.AsyncClient, url: str, **kwargs) -> ht
             sleep_s = BACKOFF_BASE * (2 ** attempt)
             await asyncio.sleep(sleep_s)
             log.warning("http_post_retry", url=url, attempt=attempt + 1, wait_sec=round(sleep_s, 2))
-            
+
 # ================== Health Check Endpoint ==================
 @app.get("/", tags=["Health Check"])
 def health_check():
@@ -180,9 +180,8 @@ async def route(
         raise HTTPException(status_code=401, detail="Unauthorized: Invalid internal API key")
     
     if ENABLE_RATELIMIT and _slowapi_installed:
-        # slowapi v0.1.9+ 에서는 limiter.check를 사용합니다.
         limiter = request.app.state.limiter
-        await limiter.check(RATELIMIT_RULE, request)
+        await limiter.check(request)
 
     if not all([OPENAI_API_KEY, ANTHROPIC_API_KEY, GEMINI_API_KEY]):
         raise HTTPException(status_code=500, detail="Server configuration error: API keys are missing.")
